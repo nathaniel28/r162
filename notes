@@ -75,11 +75,13 @@ call %r -> jalr x1, %r
 ret -> jalr x0, x1
 
 There are 15 registers and a zero register
+Conventions:
 0	zero	always zero	-
 1	ra	return address	caller saved
 2..=5	t0..=t3	temporary	caller saved
 6..=9	a0..=a3	args/return	caller saved
-10..=15	s0..=s5 saved		callee saved
+10..=14	s0..=s4 saved		callee saved
+15	sp	stack pointer	-
 
 all IO is memory mapped;
 for general serial/parallel io ports:
