@@ -1,0 +1,135 @@
+SR-type
+	rrrr bbbb oox0 0o00
+	(x == 0 || b[6,7] == 11)
+	o=000: sll r, b
+	o=001: sra r, b
+	o=010: srl r, b
+	o=011: xor r, b
+	o=100: or r, b
+	o=101: and r, b
+	x=0,o=110: mul r, b
+	x=0,o=111: mulh r, b
+	x=1,o=110: div r, b
+	x=1,o=111: jalr r, b
+SI-type
+	rrrr iiii oox0 0o00
+	     3210
+	(x == 1 && b[6,7] != 11)
+	o=000: slli r, i
+	o=001: srai r, i
+	o=010: srli r, i
+	o=011: xori r, i
+	o=100: ori r, i
+	o=101: andi r, i
+LS-type
+	rrrr bbbb iii1 0o00
+	          210
+	o=0: sw r, i(b)
+	o=1: lw r, i(b)
+B-type
+	rrrr iiii iiii 1o00
+	     7654 3210
+	o=0: bnez r, i
+	o=1: beqz r, i
+R-type
+	rrrr bbbb aaaa oo10
+	o=00: add r, a, b
+	o=01: sub r, a, b
+	o=10: slt r, a, b
+	o=11: sltu r, a, b
+I-type
+	rrrr iiii iiii io01
+	     7654 3210 8
+	o=0: addi r, i
+	o=1: li r, i
+J-type
+	iirr iiii iiii ii11
+	ba   7654 3210 98
+	jal r, i
+
+TODO: circuit needs to be updated to reflect li loading a 9 bit signed immediate instead of an unsigned one
+
+NOTES:
+a word is 16 bits and is the only addressable unit
+currently, and unfortunately, program memory and data memory are seperate
+both program and data memory are limited to 2^16 words each
+both also are read in one cycle, which is somewhat absurd (no cache yet)
+this necessitates and extremely slow clock or impossibly fast memory
+
+pseudo ops:
+nop -> sll x0, x0
+mv %r, %a -> add %r, %a, x0
+lli %r, $i -> li %r, $i[8..16]; slli %r, 8; addi %r, $i[0..8]
+beq(%tmp) %a, %b, $i -> sub %tmp, %a, %b; beqz %tmp, $i
+bne(%tmp) %a, %b, $i -> sub %tmp, %a, %b; bnez %tmp, $i
+blt(%tmp) %a, %b, $i -> slt %tmp, %a, %b; bnez %tmp, $i
+bge(%tmp) %a, %b, $i -> slt %tmp, %a, %b; beqz %tmp, $i
+ble(%tmp) %a, %b, $i -> slt %tmp, %b, %a; beqz %tmp, $i
+bgt(%tmp) %a, %b, $i -> slt %tmp, %b, %a; bnez %tmp, $i
+bltu(%tmp) %a, %b, $i -> sltu %tmp, %a, %b; bnez %tmp, $i
+bgeu(%tmp) %a, %b, $i -> sltu %tmp, %a, %b; beqz %tmp, $i
+bleu(%tmp) %a, %b, $i -> sltu %tmp, %b, %a; beqz %tmp, $i
+bgtu(%tmp) %a, %b, $i -> sltu %tmp, %b, %a; bnez %tmp, $i
+call $i -> jal x1, $i
+call %r -> jalr x1, %r
+ret -> jalr x0, x1
+
+There are 15 registers and a zero register
+0	zero	always zero	-
+1	ra	return address	caller saved
+2..=5	t0..=t3	temporary	caller saved
+6..=9	a0..=a3	args/return	caller saved
+10..=15	s0..=s5 saved		callee saved
+
+all IO is memory mapped;
+for general serial/parallel io ports:
+writes to IO mapped words are non-blocking: the receiver must buffer it
+writes set then clear the word's new data bit: the receiver may buffer this too
+when the new data bit is cleared, the value of the word is undefined
+reads on IO mapped words block until the new data bit is set
+reads buffer the incoming data when the new data bit is set
+synchronizing requires the following cooperation from the connected device:
+1. device A writes to word X which is connected to device B
+2. device A begins a blocking read on word X
+3. device B reads the value from word X and processes it
+4. device B writes a dummy value to word X when it is ready to receive again
+5. device A unblocks and reads the dummy value from word X
+for output:
+to the program, the memory is accessed like regular memory
+the only difference is that some other device is reading it asynchronously
+for input:
+TODO: gotta think of interrupts now
+
+interrupts:
+NOTE: this section is work-in-progress and very much TODO :)
+dmem[0] acts as a special register storing the interrupts mask
+dmem[0] is initially 0 (all interrupts disabled), to allow the program a chance to set up the IVT before it is used
+dmem[1] is the return address that an interrupt handler should use
+dmem[9..=24] is the interrupt vector table; dmem[9] corresponds to dmem[1]'s low bit, dmem[10] is for dmem[1]'s next bit, and so on
+
+ALU operation codes
+0000: ADD
+0001: SUB
+0010: SLT
+0011: SLTU
+0100: DIV
+1000: SLL
+1001: SRA
+1010: SRL
+1011: XOR
+1100: OR
+1101: AND
+1110: MUL
+1111: MULH
+
+Why is there...
+...16-bit instructions instead of 32-bit instructions?
+I can't compete with RISCV, so my ISA needs to be different, that difference being mine fitting all functionality in half the bits
+...no beq/bne?
+There was initially, but meant B-type instructions only had a 4-bit immediate which provides much less utility than an 8-bit immediate. Additionally, beq/bne can be implemented with sub followed by beqz/bnez.
+...no method of addressing bytes?
+This introduces complexity and there is not enough bits to accomidate new instructions to support this.
+...no unsigned multiply/divide instructions?
+I ran out of instruction bits, and this can be more easily done with shifts/adds/subtracts than signed multiplication/division. Also, you only need to work around this when working with very large numbers that are unequal when interpreted unsigned vs. 2's complement
+...no remainder instruction?
+I ran out of instruction bits, and this can be done with divide and subtract.
